@@ -2,11 +2,15 @@
 
 remote:
 	scp -i ~/.ssh/id_rsa.pub covariates.sql sumotools1.webapp.phx1.mozilla.com:~/hb-covariates
-	echo "now ssh to sumotools, and run it on 'ir', yes this sucks."
-	echo "on sumotools1: cd hb-covariates; mysql --login-path=input --batch -D input_mozilla_org_new < covariates.sql > hb-data.tsv"
+	#@echo "now ssh to sumotools, and run it on 'ir', yes this sucks."
+	#@echo "on sumotools1: "
+	#@echo "cd ~/hb-covariates; mysql --login-path=input --batch -D input_mozilla_org_new < covariates.sql > hb-data.tsv"
+	ssh sumotools1.webapp.phx1.mozilla.com -i ~/.ssh/id_rsa.pub "cd ~/hb-covariates; mysql --login-path=input --batch -D input_mozilla_org_new < covariates.sql > hb-data.tsv; gzip -f hb-data.tsv"
+
 
 hb:
-	scp -i ~/.ssh/id_rsa.pub sumotools1.webapp.phx1.mozilla.com:~/hb-covariates/hb-data.tsv .
+	scp -i ~/.ssh/id_rsa.pub sumotools1.webapp.phx1.mozilla.com:~/hb-covariates/hb-data.tsv.gz .
+	gunzip hb-data.tsv.gz
 
 
 surveys:
