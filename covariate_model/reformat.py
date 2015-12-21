@@ -2,14 +2,17 @@
 
 import csv
 import fileinput
-import sys
 import json
 import logging
+import sys
+import time
 
 import codecs
 
 UTF8Writer = codecs.getwriter('utf8')
 sys.stdout = UTF8Writer(sys.stdout)
+
+DAY = 86400
 
 def get_flowids(L):
   return dict([v['URL Variable: flowid'], v] for v in L)
@@ -30,7 +33,34 @@ def get_flowids(L):
 "searchEngine": null, "syncSetup": false}
 '''
 
-def reformat(flowids, other):
+
+def clockSkewed(server, local):
+  """ clock is more than a day off """
+  # both are in js ms scale
+  s = int(time.mktime(time.strptime(server, "%Y-%m-%d %H:%M:%S"))) * 1000
+  l = int(local)
+  #print s, l, server, local, abs(s-l)
+  return abs(s-l) > (24 * 60 * 60 * 1000)
+
+
+def fxOutofDate(version, ts, releases):
+  # this needs improving!  the firefox-json file doesn't have all channel dates.
+  # this will be 'right' only for release
+  try:
+    ts = int(time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M:%S")))
+    my = releases['firefox-'+version]
+    d = int(time.mktime(time.strptime(my['date'], "%Y-%m-%d")))
+    return ( ts - d ) > (8*7*DAY)  # 8 weeks
+  except (KeyError) as e:
+    return False
+  except Exception as e:
+    logging.warn("%s %s", version, ts)
+    raise e
+
+def hasSilverLight(plugin_list):
+  return any(('silverlight' in x.lower() for x in plugin_list))
+
+def reformat(flowids, other, releases):
   for d in other:
     flowid = d['flow_id']
     if flowid in flowids:
@@ -58,12 +88,16 @@ def reformat(flowids, other):
           searchEngine = engine or "other",
           weirdEngine = int(not bool(engine)),
           hasFlash = int("flashVersion" in extra),
+          oldFx =  int(fxOutofDate(d['version'], d['received_ts'], releases)),
+          silverlight = int(hasSilverLight(extra['plugins'].keys())),
+          clockSkewed = int(clockSkewed(d['received_ts'], d['updated_ts'])),
           dnt = int(extra['doNotTrack']),
           channel = d['channel'],
           locale = d['locale'],
           received = d['received_ts'],
           version = d['version'],
-          series = int(d['version'].split('.')[0])
+          series = int(d['version'].split('.')[0]),
+          extra = json.dumps(extra)
         )
         yield out
       except Exception as e:
@@ -74,8 +108,11 @@ def reformat(flowids, other):
 
 def write(iterator, csvfile=sys.stdout):
   first = iterator.next()
-  #with open(fn, 'w') as csvfile:
-  fieldnames = sorted(first.keys());
+  fieldnames = sorted(first.keys())
+
+  # make extra last
+  fieldnames.pop(fieldnames.index('extra'))
+  fieldnames.append('extra')
   writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
   writer.writeheader()
   writer.writerow(first)
@@ -86,6 +123,7 @@ def write(iterator, csvfile=sys.stdout):
 if __name__ == "__main__":
   flowids = get_flowids(list(csv.DictReader(open(sys.argv[1]))))
   thedata = csv.DictReader(open(sys.argv[2]),delimiter="\t")
-  outiter = reformat(flowids, thedata)
+  dates = json.load(open(sys.argv[3]))
+  outiter = reformat(flowids, thedata, dates['releases'])
   write(outiter, sys.stdout)
 
